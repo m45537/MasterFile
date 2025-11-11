@@ -18,3 +18,8 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
+Version 2025-11-11 Update:
+- Replaced regex parsing in Blackbaud import with a safe delimiter-based method.
+- Added explicit 0K → K grade normalization.
+- Improved automatic column detection for Student Records and Rediker.
+- Fully compatible with Streamlit Cloud 1.38.
