@@ -320,9 +320,9 @@ if run:
 
     st.success("Done — download your Excel below.")
     st.download_button(
-        label="⬇️ Download Master_Students_Combined_LENIENT_WITH_SUMMARY.xlsx",
+        label="⬇️ Download Master_Compare_with_Summary.xlsx",
         data=output.getvalue(),
-        file_name="Master_Students_Combined_LENIENT_WITH_SUMMARY.xlsx",
+        file_name="Master_Compare_with_Summary.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 # --------------------------------
