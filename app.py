@@ -1,5 +1,6 @@
 
-import io, re
+import io, re, datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
@@ -262,6 +263,7 @@ if run:
         })
     summary = pd.DataFrame(summary_rows).sort_values(["SURNAME","GRADE","FIRST"]).reset_index(drop=True)
 
+    # Excel
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         master_sorted.to_excel(writer, index=False, sheet_name="Master")
@@ -318,17 +320,22 @@ if run:
                 val = summary.iat[r, col_idx[src_col]]
                 ws2.write(r + 1, col_idx[src_col], val, ok_fmt if val == "✅" else bad_fmt)
 
+    # Dynamic filename prefix: YYMMDD_HHMM (America/New_York)
+    now_est = datetime.datetime.now(ZoneInfo("America/New_York"))
+    prefix = now_est.strftime("%y%m%d_%H%M")
+    filename = f"{prefix}_Master_Students.xlsx"
+
     st.success("Done — download your Excel below.")
     st.download_button(
-        label="⬇️ Download Master_Compare_with_Summary.xlsx",
+        label=f"⬇️ Download {filename}",
         data=output.getvalue(),
-        file_name="Master_Compare_with_Summary.xlsx",
+        file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
 # --------------------------------
 # Footer: Build identifier & credit
 # --------------------------------
-import datetime
 build_id = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 st.markdown(
     f"<hr><div style='text-align:center; font-size:0.9em; color:gray;'>"
