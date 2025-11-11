@@ -19,30 +19,33 @@ def norm_piece(s: str) -> str:
     return re.sub(r"[^A-Z0-9 \-]+", "", str(s).upper()).strip()
 
 def grade_norm(s: str) -> str:
-    """Normalize grade labels to consistent keys."""
+    """Normalize grade labels to consistent keys used for matching."""
     x = norm_piece(s)
-    x = re.sub(r"\s+", "", x)  # collapse spaces
+    x = re.sub(r"\s+", "", x)
+
+    # Common aliases & typos
     aliases = {
+        # Pre-K
         "P4": "PK4", "PK": "PK4", "PREK": "PK4", "PREK4": "PK4", "PRE-K": "PK4", "PRE-K4": "PK4",
         "P3": "PK3", "PREK3": "PK3", "PRE-K3": "PK3",
+        # Kindergarten
         "KINDERGARTEN": "K", "KINDER": "K", "KG": "K", "0K": "K",
-        "KINDERGARDEN": "K",  # occasional typo
+        "KINDERGARDEN": "K",  # occasional typo seen in real data
     }
-
-    # Replace known aliases
     if x in aliases:
         return aliases[x]
 
-    # Handle patterns like "GRADE1", "GR1", "G1"
+    # Grade numbers like: 1, 02, G2, GR3, GRADE4, "Grade 5", "5th", "2nd Grade", etc.
     m = re.fullmatch(r"(GRADE|GR|G)?(\d{1,2})", x)
     if m:
-        return str(int(m.group(2)))
+        return str(int(m.group(2)))  # strip leading zeroes
 
-    # Handle explicit "GRADE" words (e.g., "GRADE2", "2NDGRADE")
+    # Fallback: if any digits appear, take the first number
     m2 = re.search(r"(\d{1,2})", x)
     if m2:
         return str(int(m2.group(1)))
 
+    # Leave PK3/PK4/K and other non-numeric codes as-is
     return x
 
 def surname_last_token(last: str) -> str:
