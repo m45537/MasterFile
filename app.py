@@ -7,6 +7,13 @@ st.set_page_config(page_title="Roster → Master (LENIENT)", page_icon="📘", l
 st.title("📘 Master Students Builder — Lenient")
 st.caption("Upload Blackbaud, Rediker, Student Records → get a styled Excel with Master + Summary tabs.")
 
+# ------------------------------
+# Debug logging toggle (optional)
+# ------------------------------
+with st.sidebar:
+    debug_log = st.checkbox("🪵 Show detailed debug logs", value=False)
+    st.caption("When enabled, displays column matches and sample data from uploaded files.")
+
 def norm_piece(s: str) -> str:
     return re.sub(r"[^A-Z0-9 ]+", "", str(s).upper()).strip()
 
@@ -47,24 +54,23 @@ def safe_split_students(cell: str):
     if pd.isna(cell) or str(cell).strip() == "":
         return []
     text = str(cell)
-    # Normalize common delimiters immediately after ")"
     for delim in ["),", ")/", ");", ") /", ") ;", ") ,", ")|"]:
         text = text.replace(delim, ")|")
-    # Split
     parts = [p.strip().rstrip(",;/|") for p in text.split("|") if p.strip()]
     return parts
 
 def parse_blackbaud(file) -> pd.DataFrame:
     df = pd.read_excel(file)
+    if debug_log:
+        st.write("🖤 Blackbaud columns:", list(df.columns))
+        st.dataframe(df.head(5))
     U = {str(c).strip().upper(): c for c in df.columns}
     col_fam  = U.get("FAMILY ID") or next((c for k,c in U.items() if "FAMILY" in k and "ID" in k), None)
     col_pf   = U.get("PARENT FIRST NAME") or U.get("FIRST NAME") or U.get("PARENT FIRST")
     col_pl   = U.get("PARENT LAST NAME")  or U.get("LAST NAME")  or U.get("PARENT LAST")
     col_stu  = next((c for k,c in U.items() if "STUDENT NAME" in k and "GRADE" in k), None)
-
     if not col_stu:
         st.warning("Blackbaud: could not find 'Student name and grades' column.")
-
     rows = []
     for _, r in df.iterrows():
         fam = str(r.get(col_fam, "")).replace(".0","" ).strip() if col_fam else ""
@@ -79,7 +85,6 @@ def parse_blackbaud(file) -> pd.DataFrame:
                     name = entry[:entry.rfind("(")].strip()
                 except Exception:
                     pass
-            # Split name into Last, First
             last, first = name, ""
             if ";" in name:
                 last, first = [t.strip() for t in name.split(";", 1)]
@@ -104,6 +109,9 @@ def parse_blackbaud(file) -> pd.DataFrame:
 
 def parse_rediker(file) -> pd.DataFrame:
     preview = pd.read_excel(file, header=None, nrows=12)
+    if debug_log:
+        st.write("🔴 Rediker preview (first 12 rows):")
+        st.dataframe(preview)
     candidates = {"APID","UNIQUE ID","STUDENT NAME","FIRST","LAST","GRADE","GRADE LEVEL","GR"}
     best_row, best_hits = 0, -1
     for i in range(len(preview)):
@@ -112,23 +120,23 @@ def parse_rediker(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
     df = pd.read_excel(file, header=best_row).fillna("")
+    if debug_log:
+        st.write("🔴 Rediker detected header row:", best_row)
+        st.write("🔴 Rediker columns:", list(df.columns))
+        st.dataframe(df.head(5))
     U = {str(c).strip().upper(): c for c in df.columns}
-
     first_col = U.get("FIRST") or U.get("FIRST NAME") or None
     last_col  = U.get("LAST")  or U.get("LAST NAME")  or None
     name_col  = U.get("STUDENT NAME") or U.get("NAME") or None
     grade_col = U.get("GRADE") or U.get("GRADE LEVEL") or U.get("GR") or None
-
     if (not first_col or not last_col) and name_col:
         series = df[name_col].astype(str).str.strip()
-        # Try splitting "Last, First" or "Last; First"
         split = series.str.split(",", n=1, expand=True)
         if split.shape[1] != 2:
             split = series.str.split(";", n=1, expand=True)
         if split.shape[1] == 2:
             df["__Last"], df["__First"] = split[0].str.strip(), split[1].str.strip()
             first_col, last_col = "__First", "__Last"
-
     rows = []
     for _, r in df.iterrows():
         first = str(r.get(first_col, "")).strip() if first_col else ""
@@ -150,6 +158,9 @@ def parse_rediker(file) -> pd.DataFrame:
 
 def parse_student_records(file) -> pd.DataFrame:
     df = pd.read_excel(file).fillna("")
+    if debug_log:
+        st.write("💚 Student Records columns:", list(df.columns))
+        st.dataframe(df.head(5))
     U = {str(c).strip().upper(): c for c in df.columns}
     col_id = list(df.columns)[0]
     col_fam = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
@@ -159,7 +170,6 @@ def parse_student_records(file) -> pd.DataFrame:
     col_sf  = U.get("CHILD FIRST NAME") or U.get("STUDENT FIRST NAME") or U.get("FIRST NAME") or U.get("FIRST")
     col_sl  = U.get("CHILD LAST NAME")  or U.get("STUDENT LAST NAME")  or U.get("LAST NAME")  or U.get("LAST")
     col_grade = U.get("GRADE") or U.get("GRADE LEVEL") or U.get("GR")
-
     if (not col_sf or not col_sl) and (U.get("STUDENT NAME") or U.get("CHILD NAME") or U.get("NAME")):
         name_col = U.get("STUDENT NAME") or U.get("CHILD NAME") or U.get("NAME")
         series = df[name_col].astype(str).str.strip()
@@ -169,7 +179,6 @@ def parse_student_records(file) -> pd.DataFrame:
         if split.shape[1] == 2:
             df["__Last"], df["__First"] = split[0].str.strip(), split[1].str.strip()
             col_sf, col_sl = "__First", "__Last"
-
     out = pd.DataFrame({
         "ID": df[col_id].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_id else "",
         "FAMILY ID": df[col_fam].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_fam else "",
@@ -214,7 +223,6 @@ if run:
 
     master = pd.concat([bb_df[TARGET_COLS], red_df[TARGET_COLS], sr_df[TARGET_COLS]], ignore_index=True)
 
-    # Helpers for presence
     master["__SURNAME"] = master["STUDENT LAST NAME"].apply(surname_first_token)
     master["__FIRSTTOK"] = master.apply(lambda r: firstname_first_token(r["STUDENT FIRST NAME"], r["STUDENT LAST NAME"]), axis=1)
     master["__GRADELEN"] = master["GRADE"].apply(grade_norm)
@@ -227,7 +235,6 @@ if run:
     master["_source_rank"] = master["SOURCE"].map(lambda x: source_order.get(str(x).upper(), 99))
     master_sorted = master.sort_values(by=["UNIQUE_KEY","_source_rank","STUDENT LAST NAME","STUDENT FIRST NAME"], kind="mergesort").reset_index(drop=True)
 
-    # Summary
     from collections import Counter
     summary_rows = []
     for gkey, grp in master.groupby("__GROUP_KEY"):
@@ -255,7 +262,6 @@ if run:
         })
     summary = pd.DataFrame(summary_rows).sort_values(["SURNAME","GRADE","FIRST"]).reset_index(drop=True)
 
-    # Excel
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         master_sorted.to_excel(writer, index=False, sheet_name="Master")
@@ -269,10 +275,8 @@ if run:
         fmt_bb_warn  = wb.add_format({"font_color": "#000000", "bg_color": warn_fill, "bold": True})
         fmt_red_warn = wb.add_format({"font_color": "#A10000", "bg_color": warn_fill, "bold": True})
         fmt_sr_warn  = wb.add_format({"font_color": "#006400", "bg_color": warn_fill, "bold": True})
-        # header
         for c_idx, col in enumerate(master_sorted.columns):
             ws1.write(0, c_idx, col, header_fmt)
-        # autosize
         for i, col in enumerate(master_sorted.columns):
             vals = master_sorted[col].head(2000).astype(str).tolist()
             width = min(max([len(str(col))] + [len(v) for v in vals]) + 2, 40)
@@ -293,12 +297,10 @@ if run:
             fmt = base_fmt if present_all else warn_fmt
             for c in range(n_cols):
                 ws1.write(r + 1, c, master_sorted.iat[r, c], fmt)
-        # hide helpers
         for helper in ["__SURNAME","__FIRSTTOK","__GRADELEN","__GROUP_KEY","__SRC_PRESENT","_source_rank"]:
             if helper in idx:
                 ws1.set_column(idx[helper], idx[helper], None, None, {"hidden": True})
 
-        # Summary
         summary.to_excel(writer, index=False, sheet_name="Summary")
         ws2 = writer.sheets["Summary"]
         header_fmt2 = wb.add_format({"bold": True})
