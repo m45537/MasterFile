@@ -366,7 +366,7 @@ if run:
     master["__FIRSTTOK"] = master.apply(lambda r: firstname_first_token(r["STUDENT FIRST NAME"], r["STUDENT LAST NAME"]), axis=1)
     master["__GRADELEN"] = master["GRADE"].apply(grade_norm)
 
-    # ↓↓↓ FIX: presence counted on SURNAME+FIRSTTOKEN+GRADE (not just surname+grade)
+    # Presence counted on SURNAME+FIRSTTOKEN+GRADE
     master["__GROUP_KEY"] = master["__SURNAME"] + "|" + master["__FIRSTTOK"] + "|" + master["__GRADELEN"]
 
     src_counts = master.groupby("__GROUP_KEY")["SOURCE"].nunique().to_dict()
@@ -378,8 +378,7 @@ if run:
     master["UNIQUE_KEY"] = master["__SURNAME"] + "|" + master["__FIRSTTOK"] + "|" + master["__GRADELEN"]
     master_sorted = master.sort_values(by=["UNIQUE_KEY","_source_rank","STUDENT LAST NAME","STUDENT FIRST NAME"], kind="mergesort").reset_index(drop=True)
 
-    # SUMMARY (also on the stricter GROUP_KEY)
-    from collections import Counter
+    # SUMMARY (on the stricter GROUP_KEY)
     summary_rows = []
     for gkey, grp in master.groupby("__GROUP_KEY"):
         surname_token, first_token, grade = gkey.split("|", 2)
@@ -397,10 +396,26 @@ if run:
         })
     summary = pd.DataFrame(summary_rows).sort_values(["SURNAME_TOKEN(LAST)","GRADE","FIRST_TOKEN"]).reset_index(drop=True)
 
-    # DIAGNOSTICS
-    with st.expander("Diagnostics (detected rows & sample keys)"):
-        st.write("Blackbaud rows:", len(bb_df), "Rediker rows:", len(red_df), "Student Records rows:", len(sr_df))
-        st.dataframe(master_sorted[["SOURCE","FAMILY ID","PARENT FIRST NAME","PARENT LAST NAME","STUDENT LAST NAME","STUDENT FIRST NAME","GRADE","UNIQUE_KEY","__SRC_PRESENT"]].head(25))
+    # ── NEW: Presence-by-key debug ─────────────────────────────────────────────
+    with st.expander("Presence by key (debug)"):
+        debug = (master
+                 .groupby("__GROUP_KEY")
+                 .agg(SOURCES_PRESENT=("SOURCE", lambda s: s.str.upper().nunique()),
+                      SOURCES=("SOURCE", lambda s: ",".join(sorted(set(s.str.upper())))),
+                      EXAMPLE_NAMES=("STUDENT FIRST NAME", lambda s: "; ".join(s.head(3).astype(str)))))
+        st.dataframe(debug.sort_values("SOURCES_PRESENT", ascending=False).head(200))
+
+        # Rows present in all 3 sources (should NOT be highlighted)
+        all3 = master[master["__GROUP_KEY"].isin(debug.index[debug["SOURCES_PRESENT"]==3])]
+        st.write(f"Rows present in all 3 sources: {len(all3)}")
+        st.dataframe(all3[["SOURCE","STUDENT LAST NAME","STUDENT FIRST NAME","GRADE","UNIQUE_KEY"]].head(50))
+
+        st.download_button(
+            "Download presence_debug.csv",
+            data=debug.to_csv().encode("utf-8"),
+            file_name="presence_debug.csv",
+            mime="text/csv"
+        )
 
     # WRITE EXCEL (+ styling: highlight only when __SRC_PRESENT < 3)
     import xlsxwriter
@@ -435,7 +450,7 @@ if run:
             base_fmt, warn_fmt = (fmt_bb, fmt_bb_warn)
             if src == "RED": base_fmt, warn_fmt = (fmt_red, fmt_red_warn)
             elif src == "SR": base_fmt, warn_fmt = (fmt_sr, fmt_sr_warn)
-            fmt = base_fmt if present_all else warn_fmt  # only highlight if NOT present in all 3
+            fmt = base_fmt if present_all else warn_fmt  # only highlight if NOT in all 3
             for c in range(n_cols):
                 ws1.write(r + 1, c, master_sorted.iat[r, c], fmt)
         # hide helpers
