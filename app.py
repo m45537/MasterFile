@@ -325,3 +325,14 @@ if run:
         file_name="Master_Students_Combined_LENIENT_WITH_SUMMARY.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+# --------------------------------
+# Footer: Build identifier & credit
+# --------------------------------
+import datetime
+build_id = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+st.markdown(
+    f"<hr><div style='text-align:center; font-size:0.9em; color:gray;'>"
+    f"Build ID: <b>{build_id}</b> • Master Students Builder (lenient, debug version)"
+    f"</div>",
+    unsafe_allow_html=True,
+)
