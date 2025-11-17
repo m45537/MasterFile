@@ -21,43 +21,63 @@ def norm_piece(s: str) -> str:
 def grade_norm(s: str) -> str:
     """
     Normalize grade strings so that:
-      - P4, P 4, PK4, PK 4, PREK4, PRE-K4  →  PK4
-      - P3, PK3, PREK3, etc               →  PK3
-      - 04, 4, G4, GR4, GRADE4, 4TH       →  4
-      - Kindergarten variants             →  K
+      - P4, P 4, PK4, PK 4, PREK4, PRE-K4, etc.       →  PK4
+      - P3, PK3, PREK3, PRE-K3, etc.                  →  PK3
+      - 0K, OK, K, KG, KDG, KINDER, KINDERGARTEN, etc.→  K
+      - 04, 4, G4, GR4, GRADE4, 4TH, etc.             →  4
     """
     if s is None:
         return ""
+
     # Uppercase, keep only letters/digits/spaces/hyphens, then strip spaces
-    x = norm_piece(s)
-    x = re.sub(r"\s+", "", x)  # remove internal spaces: "P 4" → "P4", "PK 4" → "PK4"
+    x = norm_piece(s)               # e.g. "(PK4)" → "PK4", "p 4" → "P 4"
+    x = re.sub(r"\s+", "", x)       # remove internal spaces: "P 4" → "P4"
 
     if x == "":
         return ""
 
-    # PreK 4
-    if re.fullmatch(r"P[K]?4", x) or x in {"PREK4", "PREK", "PRE-K4", "PRE-K"}:
+    # ── Pre-K 4 ──────────────────────────────────────────────────────────────
+    # Accept: P4, P 4, PK4, PK 4, PREK4, PRE-K4, PREK
+    if (
+        re.fullmatch(r"P[K]?4", x)    # P4, PK4
+        or x in {"PREK4", "PREK", "PRE-K4", "PRE-K"}
+    ):
         return "PK4"
-    # PreK 3
-    if re.fullmatch(r"P[K]?3", x) or x in {"PREK3", "PRE-K3"}:
+
+    # ── Pre-K 3 ──────────────────────────────────────────────────────────────
+    # Accept: P3, PK3, PREK3, PRE-K3
+    if (
+        re.fullmatch(r"P[K]?3", x)    # P3, PK3
+        or x in {"PREK3", "PRE-K3"}
+    ):
         return "PK3"
 
-    # Kindergarten
-    if x in {"K", "KG", "KINDER", "KINDERGARTEN"}:
+    # ── Kindergarten ────────────────────────────────────────────────────────
+    # Accept: 0K, OK, K, KG, KDG, KINDER, KINDERGARTEN, K0, K-0, etc.
+    if (
+        x in {"K", "KG", "KDG", "KINDER", "KINDERGARTEN"}
+        or re.fullmatch(r"0K", x)      # "0K" (common Rediker style)
+        or re.fullmatch(r"OK", x)      # sometimes O vs 0 confusion
+        or re.fullmatch(r"K0", x)
+        or re.fullmatch(r"K-?0", x)    # K0 or K-0
+        or re.fullmatch(r"KINDERGARTEN", x)
+    ):
         return "K"
 
-    # Exact patterns like GRADE4, GR4, G4, 04, 4, etc.
+    # ── Numeric grades 1–12 ────────────────────────────────────────────────
+    # Accept: 1, 01, 1ST, G1, GR1, GRADE1, etc.
     m = re.fullmatch(r"(?:GRADE|GR|G)?0*([1-9]|1[0-2])", x)
     if m:
         return m.group(1)  # strips leading zeros: "04" → "4"
 
-    # Fallback: find a 1–12 grade anywhere in the string, including 4TH, etc.
+    # Fallback: find a 1–12 grade anywhere in the string, e.g. "4TH"
     m = re.search(r"0*([1-9]|1[0-2])(ST|ND|RD|TH)?", x)
     if m:
         return m.group(1)
 
-    # If nothing matches, just return the cleaned value
+    # If nothing matches, just return the cleaned value so at least it's consistent
     return x
+
 
 
 def surname_first_token(last: str) -> str:
