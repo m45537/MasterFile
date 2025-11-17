@@ -19,23 +19,46 @@ def norm_piece(s: str) -> str:
     return re.sub(r"[^A-Z0-9 ]+", "", str(s).upper()).strip()
 
 def grade_norm(s: str) -> str:
+    """
+    Normalize grade strings so that:
+      - P4, P 4, PK4, PK 4, PREK4, PRE-K4  →  PK4
+      - P3, PK3, PREK3, etc               →  PK3
+      - 04, 4, G4, GR4, GRADE4, 4TH       →  4
+      - Kindergarten variants             →  K
+    """
+    if s is None:
+        return ""
+    # Uppercase, keep only letters/digits/spaces/hyphens, then strip spaces
     x = norm_piece(s)
-    x = re.sub(r"\s+", "", x)
-    aliases = {
-        "P4": "PK4", "PK": "PK4", "PREK": "PK4", "PREK4": "PK4", "PRE-K": "PK4", "PRE-K4": "PK4",
-        "P3": "PK3", "PREK3": "PK3", "PRE-K3": "PK3",
-        "KINDERGARTEN": "K", "KINDER": "K", "KG": "K", "0K": "K",
-        "KINDERGARDEN": "K",
-    }
-    if x in aliases:
-        return aliases[x]
-    m = re.fullmatch(r"(GRADE|GR|G)?(\d{1,2})", x)
+    x = re.sub(r"\s+", "", x)  # remove internal spaces: "P 4" → "P4", "PK 4" → "PK4"
+
+    if x == "":
+        return ""
+
+    # PreK 4
+    if re.fullmatch(r"P[K]?4", x) or x in {"PREK4", "PREK", "PRE-K4", "PRE-K"}:
+        return "PK4"
+    # PreK 3
+    if re.fullmatch(r"P[K]?3", x) or x in {"PREK3", "PRE-K3"}:
+        return "PK3"
+
+    # Kindergarten
+    if x in {"K", "KG", "KINDER", "KINDERGARTEN"}:
+        return "K"
+
+    # Exact patterns like GRADE4, GR4, G4, 04, 4, etc.
+    m = re.fullmatch(r"(?:GRADE|GR|G)?0*([1-9]|1[0-2])", x)
     if m:
-        return str(int(m.group(2)))
-    m2 = re.search(r"(\d{1,2})", x)
-    if m2:
-        return str(int(m2.group(1)))
+        return m.group(1)  # strips leading zeros: "04" → "4"
+
+    # Fallback: find a 1–12 grade anywhere in the string, including 4TH, etc.
+    m = re.search(r"0*([1-9]|1[0-2])(ST|ND|RD|TH)?", x)
+    if m:
+        return m.group(1)
+
+    # If nothing matches, just return the cleaned value
     return x
+
 
 def surname_first_token(last: str) -> str:
     toks = [t for t in norm_piece(last).split() if t]
