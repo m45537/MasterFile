@@ -42,9 +42,18 @@ def grade_norm(s: str) -> str:
     if re.fullmatch(r"P[K]?3", x) or x in {"PREK3", "PRE-K3"}:
         return "PK3"
 
-    # Kindergarten
-    if x in {"K", "KG", "KINDER", "KINDERGARTEN"}:
-        return "K"
+    # Kindergarten — ultra strict normalization
+# Accept: 0K, OK, K, KG, KDG, KINDER, KINDERGARTEN, K0, K-0, KIDS K, K GRADE, etc.
+if (
+    x in {"K", "KG", "KDG", "KINDER", "KINDERGARTEN"}
+    or re.fullmatch(r"0K", x)     # exactly 0K (Rediker)
+    or re.fullmatch(r"OK", x)     # sometimes OCR or export blends 0/O
+    or re.fullmatch(r"K0", x)     # rare variant
+    or re.fullmatch(r"K-?0", x)   # K0, K-0
+    or re.fullmatch(r"[K][G]?", x)  # K, KG
+    or re.fullmatch(r"KINDERGARTEN", x)
+):
+    return "K"
 
     # Exact patterns like GRADE4, GR4, G4, 04, 4, etc.
     m = re.fullmatch(r"(?:GRADE|GR|G)?0*([1-9]|1[0-2])", x)
