@@ -1,10 +1,13 @@
+# app.py – Roster Master (Lenient)
+# Version 0.4 – 2025-11-18
+
 import io
 import re
 import pandas as pd
 import streamlit as st
 
 # ──────────────────────────────────────────────────────────────────────────────
-# PAGE CONFIG (must be the first Streamlit call, and only once)
+# PAGE CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Roster → Master (LENIENT)", page_icon="📘", layout="centered")
 
@@ -15,8 +18,11 @@ st.caption("Upload Blackbaud, Rediker, and Student Records → get a styled Exce
 # NORMALIZATION HELPERS
 # ──────────────────────────────────────────────────────────────────────────────
 def norm_piece(s: str) -> str:
-    # Allow letters, digits, spaces, hyphens; uppercase; trim
+    """
+    Uppercase, keep letters/digits/spaces/hyphens, strip.
+    """
     return re.sub(r"[^A-Z0-9 \-]+", "", str(s).upper()).strip()
+
 
 def grade_norm(s: str) -> str:
     """
@@ -29,80 +35,78 @@ def grade_norm(s: str) -> str:
     if s is None:
         return ""
 
-    # Uppercase, keep only letters/digits/spaces/hyphens, then strip spaces
-    x = norm_piece(s)               # e.g. "(PK4)" → "PK4", "p 4" → "P 4"
-    x = re.sub(r"\s+", "", x)       # remove internal spaces: "P 4" → "P4"
-
+    x = norm_piece(s)
+    x = re.sub(r"\s+", "", x)
     if x == "":
         return ""
 
-    # ── Pre-K 4 ──────────────────────────────────────────────────────────────
-    # Accept: P4, P 4, PK4, PK 4, PREK4, PRE-K4, PREK
-    if (
-        re.fullmatch(r"P[K]?4", x)    # P4, PK4
-        or x in {"PREK4", "PREK", "PRE-K4", "PRE-K"}
-    ):
+    # Pre-K 4
+    if (re.fullmatch(r"P[K]?4", x) or x in {"PREK4", "PREK", "PRE-K4", "PRE-K"}):
         return "PK4"
 
-    # ── Pre-K 3 ──────────────────────────────────────────────────────────────
-    # Accept: P3, PK3, PREK3, PRE-K3
-    if (
-        re.fullmatch(r"P[K]?3", x)    # P3, PK3
-        or x in {"PREK3", "PRE-K3"}
-    ):
+    # Pre-K 3
+    if (re.fullmatch(r"P[K]?3", x) or x in {"PREK3", "PRE-K3"}):
         return "PK3"
 
-    # ── Kindergarten ────────────────────────────────────────────────────────
-    # Accept: 0K, OK, K, KG, KDG, KINDER, KINDERGARTEN, K0, K-0, etc.
+    # Kindergarten
     if (
         x in {"K", "KG", "KDG", "KINDER", "KINDERGARTEN"}
-        or re.fullmatch(r"0K", x)      # "0K" (common Rediker style)
-        or re.fullmatch(r"OK", x)      # sometimes O vs 0 confusion
+        or re.fullmatch(r"0K", x)
+        or re.fullmatch(r"OK", x)
         or re.fullmatch(r"K0", x)
-        or re.fullmatch(r"K-?0", x)    # K0 or K-0
+        or re.fullmatch(r"K-?0", x)
         or re.fullmatch(r"KINDERGARTEN", x)
     ):
         return "K"
 
-    # ── Numeric grades 1–12 ────────────────────────────────────────────────
-    # Accept: 1, 01, 1ST, G1, GR1, GRADE1, etc.
+    # Grades 1–12
     m = re.fullmatch(r"(?:GRADE|GR|G)?0*([1-9]|1[0-2])", x)
     if m:
-        return m.group(1)  # strips leading zeros: "04" → "4"
+        return m.group(1)
 
-    # Fallback: find a 1–12 grade anywhere in the string, e.g. "4TH"
     m = re.search(r"0*([1-9]|1[0-2])(ST|ND|RD|TH)?", x)
     if m:
         return m.group(1)
 
-    # If nothing matches, just return the cleaned value so at least it's consistent
     return x
 
 
-
 def surname_last_token(last: str) -> str:
-    # Use the LAST token of the last name to handle compound surnames (ABREU RAMIREZ → RAMIREZ)
+    """
+    Use the last *true* surname token.
+    Handles suffixes like JR, SR, II, III, IV, V by ignoring them.
+    """
     s = norm_piece(last).replace("-", " ")
     toks = [t for t in s.split() if t]
-    return toks[-1] if toks else ""
+    if not toks:
+        return ""
+    suffixes = {"JR", "SR", "II", "III", "IV", "V"}
+    if toks[-1] in suffixes and len(toks) >= 2:
+        return toks[-2]
+    return toks[-1]
+
 
 def firstname_first_token(first: str, last: str) -> str:
-    # Prefer first token of FIRST name; if missing, fall back to first token of LAST
+    """
+    Prefer first token of FIRST name; if missing, fall back to first token of LAST.
+    """
     ftoks = [t for t in norm_piece(first).split() if t]
     if ftoks:
         return ftoks[0]
     ltoks = [t for t in norm_piece(last).split() if t]
     return ltoks[0] if ltoks else ""
 
+
 def make_unique_key_lenient(first: str, last: str, grade: str) -> str:
+    """
+    Student identity key used across datasets:
+      SURNAME_TOKEN(LAST) | FIRST_TOKEN | NORMALIZED_GRADE
+    """
     return f"{surname_last_token(last)}|{firstname_first_token(first, last)}|{grade_norm(grade)}"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # GENERIC COLUMN-FINDING UTILITIES
 # ──────────────────────────────────────────────────────────────────────────────
-def upper_cols(df):
-    return {str(c).strip().upper(): c for c in df.columns}
-
 def find_any(df, *need_tokens):
     """
     Return first column whose UPPER header contains ALL tokens in any of the
@@ -116,13 +120,16 @@ def find_any(df, *need_tokens):
                 return cand
     return None
 
+
 def find_student_grade_blob_column(df):
-    # Prefer columns that explicitly include both STUDENT and GRADE
+    """
+    For Blackbaud: find the 'STUDENT ... (grade)' blob column.
+    Prefer headers containing STUDENT and GRADE, else a column with many '(...)' endings.
+    """
     for c in df.columns:
         up = str(c).strip().upper()
         if "STUDENT" in up and "GRADE" in up:
             return c
-    # Fallback: a column with many "(...)" endings (e.g., "LAST, FIRST (K)")
     scores = {c: df[c].astype(str).str.contains(r"\([^)]+\)\s*$", regex=True).sum() for c in df.columns}
     if not scores:
         return None
@@ -130,7 +137,7 @@ def find_student_grade_blob_column(df):
     return best if scores[best] >= 3 else None
 
 # ──────────────────────────────────────────────────────────────────────────────
-# BLACKBAUD PARSER (robust header detection; parent columns OPTIONAL)
+# BLACKBAUD PARSER
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_blackbaud(file) -> pd.DataFrame:
     # Detect header row in first 25 lines
@@ -148,7 +155,6 @@ def parse_blackbaud(file) -> pd.DataFrame:
 
     # Flexible column finding
     fam_col = find_any(df, ("FAMILY","ID"))
-    # Parent FIRST/LAST: accept broad variants and make OPTIONAL
     pf_col = find_any(
         df, ("PARENT","FIRST"),
         ("PARENT 1","FIRST"), ("P1","FIRST"),
@@ -219,136 +225,118 @@ def parse_blackbaud(file) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# REDIKER PARSER (robust; grade tolerant/inferred; required FIRST/LAST only)
+# REDIKER PARSER (STUDENT NAME for student, FIRST/LAST for parent)
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_rediker(file) -> pd.DataFrame:
-    probe = pd.read_excel(file, header=None, nrows=12, usecols="A:K")
-    tokens = {"APID","UNIQUE","STUDENT","FIRST","LAST","GRADE","LEVEL","GR","FAMILY","ID","HOMEROOM","SECTION","CLASS","HR"}
+    """
+    Rediker export where:
+      - STUDENT NAME = student full name
+      - FIRST NAME / LAST NAME = parent names
+      - APID (or UNIQUE ID) = student ID
+    """
+    # Detect header row in first ~12 lines
+    probe = pd.read_excel(file, header=None, nrows=12)
+    tokens = {"APID", "STUDENT", "STUDENT NAME", "FIRST", "LAST", "GRADE", "UNIQUE"}
     best_row, best_hits = 0, -1
     for i in range(len(probe)):
-        row_vals = [str(x).strip().upper() for x in probe.iloc[i].tolist()]
-        hits = sum(any(tok in cell for tok in tokens) for cell in row_vals)
+        row = " ".join(str(x).upper() for x in probe.iloc[i].tolist())
+        hits = sum(tok in row for tok in tokens)
         if hits > best_hits:
             best_row, best_hits = i, hits
 
-    df = pd.read_excel(file, header=best_row, usecols="A:K").fillna("")
+    df = pd.read_excel(file, header=best_row).fillna("")
     df.columns = [str(c).strip() for c in df.columns]
-    U = {c.upper().strip(): c for c in df.columns}
+    U = {c.upper(): c for c in df.columns}
 
-    first_col = next((U[k] for k in U if k in ("FIRST","FIRST NAME","FIRST_NAME","STUDENT FIRST NAME")), None)
-    last_col  = next((U[k] for k in U if k in ("LAST","LAST NAME","LAST_NAME","STUDENT LAST NAME")), None)
-    name_col  = next((U[k] for k in U if k in ("STUDENT NAME","STUDENT_NAME","NAME")), None)
+    # STUDENT name column
+    student_col = (
+        U.get("STUDENT NAME")
+        or U.get("STUDENT")
+        or U.get("STUDENT_NAME")
+    )
+    if not student_col:
+        st.error("Rediker: couldn’t find STUDENT NAME column. Please check the export.")
+        st.stop()
 
-    # Grade detection (tolerant)
+    # Parent name columns
+    parent_first_col = U.get("FIRST NAME") or U.get("FIRST")
+    parent_last_col  = U.get("LAST NAME")  or U.get("LAST")
+
+    # Grade column (detected, normalization handled later by grade_norm)
     grade_keys = (
-        "GRADE","GRADE LEVEL","GRADELEVEL","GR","GR LEVEL","GRLEVEL","GRADE_LVL",
-        "GRADE(LVL)","GRADE (LEVEL)","CURRENT GRADE","CUR GRADE","LVL"
+        "GRADE", "GRADE LEVEL", "GRADELEVEL", "GR", "GR LEVEL",
+        "GRLEVEL", "GRADE_LVL", "CURRENT GRADE", "CUR GRADE", "LVL"
     )
     grade_col = None
-    for k in U:
+    for k, orig in U.items():
         kk = " ".join(k.split())
         if kk in grade_keys or ("GRADE" in kk and "FAMILY" not in kk):
-            grade_col = U[k]; break
+            grade_col = orig
+            break
 
-    fam_col = next((U[k] for k in U if "FAMILY" in k and "ID" in k), None)
-    rid_col = next((U[k] for k in U if k in ("APID","UNIQUE ID","UNIQUE_ID","REDIKER ID","REDIKERID","ID") and U[k] != fam_col), None)
+    if not grade_col:
+        st.warning("Rediker: no GRADE column found. Proceeding with blanks.")
+
+    # Family ID and Rediker ID
+    fam_col = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
+    rid_col = U.get("APID") or U.get("UNIQUE ID") or U.get("UNIQUEID") or U.get("ID")
 
     def split_student_name(val: str):
         if pd.isna(val) or str(val).strip() == "":
             return "", ""
         s = str(val).strip()
+        # Common patterns: "RIVERA; AIDEN", "RIVERA, AIDEN", "AIDEN RIVERA"
         if ";" in s:
-            last, first = [t.strip() for t in s.split(";",1)]
+            last, first = [t.strip() for t in s.split(";", 1)]
         elif "," in s:
-            last, first = [t.strip() for t in s.split(",",1)]
+            last, first = [t.strip() for t in s.split(",", 1)]
         else:
             parts = s.split()
-            last, first = (parts[0], " ".join(parts[1:])) if len(parts) >= 2 else (s, "")
+            if len(parts) >= 2:
+                # Assume "FIRST LAST" if just space-separated
+                first = " ".join(parts[:-1])
+                last  = parts[-1]
+            elif len(parts) == 1:
+                first, last = parts[0], ""
+            else:
+                first, last = "", ""
         return first, last
 
-    if not (first_col and last_col) and name_col:
-        split = df[name_col].apply(split_student_name).tolist()
-        df["__First"], df["__Last"] = zip(*split) if split else ([], [])
-        first_col, last_col = "__First", "__Last"
-
-    # Try to infer grade if column absent
-    inferred_grade = None
-    if not grade_col:
-        likely_grade_sources = []
-        for c in df.columns:
-            up = c.upper()
-            if any(key in up for key in ("HOMEROOM","HOMEROOM#", "HR", "SECTION","CLASS","GRADE")):
-                likely_grade_sources.append(c)
-
-        def guess_grade_from_text(s: str) -> str:
-            if not s or str(s).strip()=="":
-                return ""
-            t = norm_piece(s)
-            if re.search(r"\bP\s*3\b|PK\s*3\b|PRE[-\s]*K\s*3\b|PREK\s*3\b", t):
-                return "PK3"
-            if re.search(r"\bP\s*4\b|PK\s*4\b|PRE[-\s]*K\s*4\b|PREK\s*4\b", t):
-                return "PK4"
-            if re.search(r"\bK(\b|INDER)", t):
-                return "K"
-            m = re.search(r"\b(?:GR|GRADE|G)?\s*([1-9]|1[0-2])\b", t)
-            if m:
-                return str(int(m.group(1)))
-            m = re.search(r"\b([1-9]|1[0-2])\s*[-]?[A-Z]\b", t)
-            if m:
-                return str(int(m.group(1)))
-            return ""
-
-        for c in likely_grade_sources:
-            series_guess = df[c].astype(str).apply(guess_grade_from_text)
-            if (series_guess != "").mean() >= 0.25:
-                inferred_grade = series_guess
-                break
-        if inferred_grade is None:
-            for c in df.columns:
-                series_guess = df[c].astype(str).apply(guess_grade_from_text)
-                if (series_guess != "").mean() >= 0.25:
-                    inferred_grade = series_guess
-                    break
-
-        if inferred_grade is None:
-            st.warning("Rediker: no GRADE column found and could not infer grades. Proceeding with blanks.")
-        else:
-            st.info("Rediker: GRADE column not found; grades inferred from other columns.")
-
-    # Guard names (we’ll proceed even if grade blank)
-    if not first_col or not last_col:
-        st.error("Rediker: couldn’t find required column(s): FIRST name and/or LAST name.")
-        st.stop()
-
     rows = []
-    for idx, r in df.iterrows():
-        fam   = str(r.get(fam_col, "")).replace(".0","").strip() if fam_col else ""
-        rid   = str(r.get(rid_col, "")).replace(".0","").strip() if rid_col else ""
-        first = str(r.get(first_col, "")).strip()
-        last  = str(r.get(last_col,  "")).strip()
+    for _, r in df.iterrows():
+        stud_first, stud_last = split_student_name(r.get(student_col, ""))
+
+        parent_first = str(r.get(parent_first_col, "")).strip() if parent_first_col else ""
+        parent_last  = str(r.get(parent_last_col,  "")).strip() if parent_last_col  else ""
+
         if grade_col:
             grade = str(r.get(grade_col, "")).strip()
         else:
-            grade = str(inferred_grade.loc[idx]).strip() if inferred_grade is not None else ""
+            grade = ""
+
+        fam = str(r.get(fam_col, "")).replace(".0", "").strip() if fam_col else ""
+        rid = str(r.get(rid_col, "")).replace(".0", "").strip() if rid_col else ""
+
         rows.append({
             "ID": "",
             "FAMILY ID": fam,
-            "PARENT FIRST NAME": "",
-            "PARENT LAST NAME": "",
-            "STUDENT FIRST NAME": first,
-            "STUDENT LAST NAME": last,
+            "PARENT FIRST NAME": parent_first,
+            "PARENT LAST NAME": parent_last,
+            "STUDENT FIRST NAME": stud_first,
+            "STUDENT LAST NAME": stud_last,
             "GRADE": grade,
             "REDIKER ID": rid,
             "SOURCE": "RED",
-            "UNIQUE_KEY": make_unique_key_lenient(first, last, grade),
+            "UNIQUE_KEY": make_unique_key_lenient(stud_first, stud_last, grade),
         })
+
     return pd.DataFrame(rows)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STUDENT RECORDS PARSER (NOW TOLERANT; will not stop; infers/splits NAME)
+# STUDENT RECORDS PARSER (tolerant)
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_student_records(file) -> pd.DataFrame:
-    # Detect a plausible header row (some SR exports have leading banners)
+    # Detect a plausible header row
     probe = pd.read_excel(file, header=None, nrows=20)
     clues = ["STUDENT","FIRST","LAST","NAME","GRADE","FAMILY","REDIKER","ID"]
     best_row, best_hits = 0, -1
@@ -362,17 +350,13 @@ def parse_student_records(file) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     U = {c.upper(): c for c in df.columns}
 
-    # Try many variants for each field
+    # Try many variants
     col_id   = list(df.columns)[0] if len(df.columns) else None
     col_fam  = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
     col_red  = U.get("REDIKER ID") or U.get("REDIKERID") or U.get("REDIKER_ID")
-    # First/Last name direct hits
     col_sf   = U.get("STUDENT FIRST NAME") or U.get("FIRST NAME") or U.get("FIRST") or U.get("LEGAL FIRST") or U.get("PREFERRED FIRST")
     col_sl   = U.get("STUDENT LAST NAME")  or U.get("LAST NAME")  or U.get("LAST")  or U.get("LEGAL LAST")
-    # Single NAME column variants
     name_col = U.get("STUDENT NAME") or U.get("NAME") or U.get("FULL NAME") or U.get("CHILD NAME") or U.get("STUDENT")
-
-    # Grade
     col_grade= U.get("GRADE") or U.get("GRADE LEVEL") or U.get("GR") or U.get("CURRENT GRADE")
 
     # If FIRST/LAST missing but NAME exists, split it
@@ -386,7 +370,7 @@ def parse_student_records(file) -> pd.DataFrame:
             last, first = [t.strip() for t in s.split(",",1)]
         else:
             toks = s.split()
-            # Prefer "FIRST LAST" for SR single-column names
+            # Prefer "FIRST LAST" for SR
             if len(toks) >= 2:
                 first = " ".join(toks[:-1])
                 last  = toks[-1]
@@ -401,13 +385,12 @@ def parse_student_records(file) -> pd.DataFrame:
         df["__First"], df["__Last"] = zip(*split) if split else ([], [])
         col_sf, col_sl = "__First", "__Last"
 
-    # Last resort: guess a NAME-like column by content (alphabetic and spaces)
+    # Last resort: guess a NAME-like column by content
     if not (col_sf and col_sl):
         namey = None
         best_score = -1
         for c in df.columns:
             series = df[c].astype(str)
-            # score: proportion that looks like alphabetic names with at least one space
             score = ((series.str.contains(r"[A-Za-z]") & series.str.contains(r"\s")).mean())
             if score > best_score:
                 best_score, namey = score, c
@@ -416,9 +399,8 @@ def parse_student_records(file) -> pd.DataFrame:
             df["__First2"], df["__Last2"] = zip(*split) if split else ([], [])
             col_sf, col_sl = "__First2", "__Last2"
 
-    # If STILL missing both names, proceed with blanks (but warn)
-    missing_name = not (col_sf and col_sl)
-    if missing_name:
+    # If STILL missing both names, proceed with blanks but warn
+    if not (col_sf and col_sl):
         st.warning("Student Records: could not find FIRST/LAST or a usable NAME column. Proceeding with blanks; such rows may be dropped.")
         df["__FirstBlank"] = ""
         df["__LastBlank"] = ""
@@ -442,14 +424,16 @@ def parse_student_records(file) -> pd.DataFrame:
         "SOURCE": "SR",
     })
 
-    # Drop rows where both first and last are blank (we can’t build a key)
     before = len(out)
     out = out[~((out["STUDENT FIRST NAME"]=="") & (out["STUDENT LAST NAME"]==""))].copy()
     dropped = before - len(out)
     if dropped > 0:
         st.warning(f"Student Records: dropped {dropped} row(s) with no usable student name.")
 
-    out["UNIQUE_KEY"] = [make_unique_key_lenient(f, l, g) for f, l, g in zip(out["STUDENT FIRST NAME"], out["STUDENT LAST NAME"], out["GRADE"])]
+    out["UNIQUE_KEY"] = [
+        make_unique_key_lenient(f, l, g)
+        for f, l, g in zip(out["STUDENT FIRST NAME"], out["STUDENT LAST NAME"], out["GRADE"])
+    ]
     return out
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -466,7 +450,7 @@ with col3:
 run = st.button("Build Master Excel", type="primary", disabled=not (f_bb and f_red and f_sr))
 
 # ──────────────────────────────────────────────────────────────────────────────
-# PROCESS
+# MAIN PROCESS
 # ──────────────────────────────────────────────────────────────────────────────
 if run:
     with st.spinner("Parsing & normalizing..."):
@@ -480,13 +464,14 @@ if run:
     ]
     master = pd.concat([bb_df[TARGET], red_df[TARGET], sr_df[TARGET]], ignore_index=True)
 
-    # Build helpers for lenient grouping/presence (STRICTER: surname token + first token + normalized grade)
+    # Helpers for grouping/presence
     master["__SURNAME"]  = master["STUDENT LAST NAME"].apply(surname_last_token)
     master["__FIRSTTOK"] = master.apply(lambda r: firstname_first_token(r["STUDENT FIRST NAME"], r["STUDENT LAST NAME"]), axis=1)
     master["__GRADELEN"] = master["GRADE"].apply(grade_norm)
 
-    # Presence counted on SURNAME+FIRSTTOKEN+GRADE
+    # Student-level key: SURNAME|FIRSTTOKEN|GRADELEN
     master["__GROUP_KEY"] = master["__SURNAME"] + "|" + master["__FIRSTTOK"] + "|" + master["__GRADELEN"]
+    master["UNIQUE_KEY"]  = master["__GROUP_KEY"]
 
     src_counts = master.groupby("__GROUP_KEY")["SOURCE"].nunique().to_dict()
     master["__SRC_PRESENT"] = master["__GROUP_KEY"].map(src_counts).fillna(0).astype(int)
@@ -494,10 +479,12 @@ if run:
     # Sort by key then source
     order = {"BB":0, "RED":1, "SR":2}
     master["_source_rank"] = master["SOURCE"].map(lambda x: order.get(str(x).upper(), 99))
-    master["UNIQUE_KEY"] = master["__SURNAME"] + "|" + master["__FIRSTTOK"] + "|" + master["__GRADELEN"]
-    master_sorted = master.sort_values(by=["UNIQUE_KEY","_source_rank","STUDENT LAST NAME","STUDENT FIRST NAME"], kind="mergesort").reset_index(drop=True)
+    master_sorted = master.sort_values(
+        by=["UNIQUE_KEY","_source_rank","STUDENT LAST NAME","STUDENT FIRST NAME"],
+        kind="mergesort"
+    ).reset_index(drop=True)
 
-    # SUMMARY (on the stricter GROUP_KEY)
+    # SUMMARY (per student key)
     summary_rows = []
     for gkey, grp in master.groupby("__GROUP_KEY"):
         parts = gkey.split("|")
@@ -514,9 +501,11 @@ if run:
             "SR": "✅" if in_sr else "❌",
             "SOURCES_PRESENT": int(in_bb)+int(in_red)+int(in_sr),
         })
-    summary = pd.DataFrame(summary_rows).sort_values(["SURNAME_TOKEN(LAST)","GRADE","FIRST_TOKEN"]).reset_index(drop=True)
+    summary = pd.DataFrame(summary_rows).sort_values(
+        ["SURNAME_TOKEN(LAST)","GRADE","FIRST_TOKEN"]
+    ).reset_index(drop=True)
 
-    # ── Presence-by-key debug
+    # Presence-by-key debug
     with st.expander("Presence by key (debug)"):
         debug = (master
                  .groupby("__GROUP_KEY")
@@ -536,7 +525,7 @@ if run:
             mime="text/csv"
         )
 
-    # WRITE EXCEL (+ styling: highlight only when __SRC_PRESENT < 3)
+    # WRITE EXCEL
     import xlsxwriter
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -552,6 +541,7 @@ if run:
         fmt_bb_warn  = wb.add_format({"font_color": "#000000", "bg_color": warn_fill, "bold": True})
         fmt_red_warn = wb.add_format({"font_color": "#A10000", "bg_color": warn_fill, "bold": True})
         fmt_sr_warn  = wb.add_format({"font_color": "#006400", "bg_color": warn_fill, "bold": True})
+
         # header
         for c_idx, col in enumerate(master_sorted.columns):
             ws1.write(0, c_idx, col, header_fmt)
@@ -560,6 +550,7 @@ if run:
             vals = master_sorted[col].astype(str).head(2000).tolist()
             width = min(max([len(str(col))] + [len(v) for v in vals]) + 2, 40)
             ws1.set_column(i, i, width)
+
         idx = {c:i for i,c in enumerate(master_sorted.columns)}
         s_col = idx["SOURCE"]; present_col = idx["__SRC_PRESENT"]
         n_rows, n_cols = master_sorted.shape
@@ -572,6 +563,7 @@ if run:
             fmt = base_fmt if present_all else warn_fmt  # only highlight if NOT in all 3
             for c in range(n_cols):
                 ws1.write(r + 1, c, master_sorted.iat[r, c], fmt)
+
         # hide helpers
         for helper in ["__SURNAME","__FIRSTTOK","__GRADELEN","__GROUP_KEY","__SRC_PRESENT","_source_rank"]:
             if helper in idx:
