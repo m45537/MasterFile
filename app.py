@@ -1,17 +1,20 @@
-# app.py – Roster Master (Lenient)
-# Version 0.4 – 2025-11-18
+# app.py – Dataset Comparison
+# Version 1.0.0 – 2025-11-19 21:30 ET
 
 import io
 import re
+from datetime import datetime
+
 import pandas as pd
+import pytz
 import streamlit as st
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Roster → Master (LENIENT)", page_icon="📘", layout="centered")
+st.set_page_config(page_title="Dataset Comparison", page_icon="📘", layout="centered")
 
-st.title("📘 Master Students Builder — Lenient")
+st.title("📘 Dataset Comparison")
 st.caption("Upload Blackbaud, Rediker, and Student Records → get a styled Excel with Master + Summary tabs.")
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -154,20 +157,20 @@ def parse_blackbaud(file) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
 
     # Flexible column finding
-    fam_col = find_any(df, ("FAMILY","ID"))
+    fam_col = find_any(df, ("FAMILY", "ID"))
     pf_col = find_any(
-        df, ("PARENT","FIRST"),
-        ("PARENT 1","FIRST"), ("P1","FIRST"),
-        ("PRIMARY","PARENT","FIRST"),
-        ("GUARDIAN","FIRST"),
-        ("CONTACT 1","FIRST"), ("CONTACT1","FIRST")
+        df, ("PARENT", "FIRST"),
+        ("PARENT 1", "FIRST"), ("P1", "FIRST"),
+        ("PRIMARY", "PARENT", "FIRST"),
+        ("GUARDIAN", "FIRST"),
+        ("CONTACT 1", "FIRST"), ("CONTACT1", "FIRST")
     )
     pl_col = find_any(
-        df, ("PARENT","LAST"),
-        ("PARENT 1","LAST"), ("P1","LAST"),
-        ("PRIMARY","PARENT","LAST"),
-        ("GUARDIAN","LAST"),
-        ("CONTACT 1","LAST"), ("CONTACT1","LAST")
+        df, ("PARENT", "LAST"),
+        ("PARENT 1", "LAST"), ("P1", "LAST"),
+        ("PRIMARY", "PARENT", "LAST"),
+        ("GUARDIAN", "LAST"),
+        ("CONTACT 1", "LAST"), ("CONTACT1", "LAST")
     )
     stu_blob_col = find_student_grade_blob_column(df)
 
@@ -201,9 +204,9 @@ def parse_blackbaud(file) -> pd.DataFrame:
 
     rows = []
     for _, r in df.iterrows():
-        fam = str(r.get(fam_col, "")).replace(".0","").strip() if fam_col else ""
-        pf  = str(r.get(pf_col,  "")).strip() if pf_col else ""
-        pl  = str(r.get(pl_col,  "")).strip() if pl_col else ""
+        fam = str(r.get(fam_col, "")).replace(".0", "").strip() if fam_col else ""
+        pf = str(r.get(pf_col, "")).strip() if pf_col else ""
+        pl = str(r.get(pl_col, "")).strip() if pl_col else ""
         for entry in split_students(r.get(stu_blob_col, "")):
             l, f, g = parse_student_entry(entry)
             rows.append({
@@ -260,7 +263,7 @@ def parse_rediker(file) -> pd.DataFrame:
 
     # Parent name columns
     parent_first_col = U.get("FIRST NAME") or U.get("FIRST")
-    parent_last_col  = U.get("LAST NAME")  or U.get("LAST")
+    parent_last_col = U.get("LAST NAME") or U.get("LAST")
 
     # Grade column (detected, normalization handled later by grade_norm)
     grade_keys = (
@@ -295,7 +298,7 @@ def parse_rediker(file) -> pd.DataFrame:
             if len(parts) >= 2:
                 # Assume "FIRST LAST" if just space-separated
                 first = " ".join(parts[:-1])
-                last  = parts[-1]
+                last = parts[-1]
             elif len(parts) == 1:
                 first, last = parts[0], ""
             else:
@@ -307,7 +310,7 @@ def parse_rediker(file) -> pd.DataFrame:
         stud_first, stud_last = split_student_name(r.get(student_col, ""))
 
         parent_first = str(r.get(parent_first_col, "")).strip() if parent_first_col else ""
-        parent_last  = str(r.get(parent_last_col,  "")).strip() if parent_last_col  else ""
+        parent_last = str(r.get(parent_last_col, "")).strip() if parent_last_col else ""
 
         if grade_col:
             grade = str(r.get(grade_col, "")).strip()
@@ -338,7 +341,7 @@ def parse_rediker(file) -> pd.DataFrame:
 def parse_student_records(file) -> pd.DataFrame:
     # Detect a plausible header row
     probe = pd.read_excel(file, header=None, nrows=20)
-    clues = ["STUDENT","FIRST","LAST","NAME","GRADE","FAMILY","REDIKER","ID"]
+    clues = ["STUDENT", "FIRST", "LAST", "NAME", "GRADE", "FAMILY", "REDIKER", "ID"]
     best_row, best_hits = 0, -1
     for i in range(len(probe)):
         row = " ".join(str(x).upper() for x in probe.iloc[i].tolist())
@@ -351,29 +354,29 @@ def parse_student_records(file) -> pd.DataFrame:
     U = {c.upper(): c for c in df.columns}
 
     # Try many variants
-    col_id   = list(df.columns)[0] if len(df.columns) else None
-    col_fam  = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
-    col_red  = U.get("REDIKER ID") or U.get("REDIKERID") or U.get("REDIKER_ID")
-    col_sf   = U.get("STUDENT FIRST NAME") or U.get("FIRST NAME") or U.get("FIRST") or U.get("LEGAL FIRST") or U.get("PREFERRED FIRST")
-    col_sl   = U.get("STUDENT LAST NAME")  or U.get("LAST NAME")  or U.get("LAST")  or U.get("LEGAL LAST")
+    col_id = list(df.columns)[0] if len(df.columns) else None
+    col_fam = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
+    col_red = U.get("REDIKER ID") or U.get("REDIKERID") or U.get("REDIKER_ID")
+    col_sf = U.get("STUDENT FIRST NAME") or U.get("FIRST NAME") or U.get("FIRST") or U.get("LEGAL FIRST") or U.get("PREFERRED FIRST")
+    col_sl = U.get("STUDENT LAST NAME") or U.get("LAST NAME") or U.get("LAST") or U.get("LEGAL LAST")
     name_col = U.get("STUDENT NAME") or U.get("NAME") or U.get("FULL NAME") or U.get("CHILD NAME") or U.get("STUDENT")
-    col_grade= U.get("GRADE") or U.get("GRADE LEVEL") or U.get("GR") or U.get("CURRENT GRADE")
+    col_grade = U.get("GRADE") or U.get("GRADE LEVEL") or U.get("GR") or U.get("CURRENT GRADE")
 
     # If FIRST/LAST missing but NAME exists, split it
     def split_name_cell(val: str):
-        if pd.isna(val) or str(val).strip()=="":
+        if pd.isna(val) or str(val).strip() == "":
             return "", ""
         s = str(val).strip()
         if ";" in s:
-            last, first = [t.strip() for t in s.split(";",1)]
+            last, first = [t.strip() for t in s.split(";", 1)]
         elif "," in s:
-            last, first = [t.strip() for t in s.split(",",1)]
+            last, first = [t.strip() for t in s.split(",", 1)]
         else:
             toks = s.split()
             # Prefer "FIRST LAST" for SR
             if len(toks) >= 2:
                 first = " ".join(toks[:-1])
-                last  = toks[-1]
+                last = toks[-1]
             elif len(toks) == 1:
                 first, last = toks[0], ""
             else:
@@ -416,16 +419,16 @@ def parse_student_records(file) -> pd.DataFrame:
         "ID": df[col_id].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_id else "",
         "FAMILY ID": df[col_fam].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_fam else "",
         "PARENT FIRST NAME": df[U.get("PARENT FIRST NAME")].astype(str).str.strip() if U.get("PARENT FIRST NAME") else "",
-        "PARENT LAST NAME":  df[U.get("PARENT LAST NAME")].astype(str).str.strip() if U.get("PARENT LAST NAME") else "",
+        "PARENT LAST NAME": df[U.get("PARENT LAST NAME")].astype(str).str.strip() if U.get("PARENT LAST NAME") else "",
         "STUDENT FIRST NAME": df[col_sf].astype(str).str.strip(),
-        "STUDENT LAST NAME":  df[col_sl].astype(str).str.strip(),
+        "STUDENT LAST NAME": df[col_sl].astype(str).str.strip(),
         "GRADE": df[col_grade].astype(str).str.strip(),
         "REDIKER ID": df[col_red].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_red else "",
         "SOURCE": "SR",
     })
 
     before = len(out)
-    out = out[~((out["STUDENT FIRST NAME"]=="") & (out["STUDENT LAST NAME"]==""))].copy()
+    out = out[~((out["STUDENT FIRST NAME"] == "") & (out["STUDENT LAST NAME"] == ""))].copy()
     dropped = before - len(out)
     if dropped > 0:
         st.warning(f"Student Records: dropped {dropped} row(s) with no usable student name.")
@@ -441,46 +444,49 @@ def parse_student_records(file) -> pd.DataFrame:
 # ──────────────────────────────────────────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
 with col1:
-    f_bb = st.file_uploader("Blackbaud", type=["xlsx","xls"])
+    f_bb = st.file_uploader("Blackbaud", type=["xlsx", "xls"])
 with col2:
-    f_red = st.file_uploader("Rediker", type=["xlsx","xls"])
+    f_red = st.file_uploader("Rediker", type=["xlsx", "xls"])
 with col3:
-    f_sr = st.file_uploader("Student Records", type=["xlsx","xls"])
+    f_sr = st.file_uploader("Student Records", type=["xlsx", "xls"])
 
-run = st.button("Build Master Excel", type="primary", disabled=not (f_bb and f_red and f_sr))
+run = st.button("Build Excel Comparison", type="primary", disabled=not (f_bb and f_red and f_sr))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MAIN PROCESS
 # ──────────────────────────────────────────────────────────────────────────────
 if run:
     with st.spinner("Parsing & normalizing..."):
-        bb_df  = parse_blackbaud(f_bb)
+        bb_df = parse_blackbaud(f_bb)
         red_df = parse_rediker(f_red)
-        sr_df  = parse_student_records(f_sr)
+        sr_df = parse_student_records(f_sr)
 
     TARGET = [
-        "ID","FAMILY ID","PARENT FIRST NAME","PARENT LAST NAME",
-        "STUDENT FIRST NAME","STUDENT LAST NAME","GRADE","REDIKER ID","SOURCE","UNIQUE_KEY"
+        "ID", "FAMILY ID", "PARENT FIRST NAME", "PARENT LAST NAME",
+        "STUDENT FIRST NAME", "STUDENT LAST NAME", "GRADE", "REDIKER ID",
+        "SOURCE", "UNIQUE_KEY"
     ]
     master = pd.concat([bb_df[TARGET], red_df[TARGET], sr_df[TARGET]], ignore_index=True)
 
     # Helpers for grouping/presence
-    master["__SURNAME"]  = master["STUDENT LAST NAME"].apply(surname_last_token)
-    master["__FIRSTTOK"] = master.apply(lambda r: firstname_first_token(r["STUDENT FIRST NAME"], r["STUDENT LAST NAME"]), axis=1)
+    master["__SURNAME"] = master["STUDENT LAST NAME"].apply(surname_last_token)
+    master["__FIRSTTOK"] = master.apply(
+        lambda r: firstname_first_token(r["STUDENT FIRST NAME"], r["STUDENT LAST NAME"]), axis=1
+    )
     master["__GRADELEN"] = master["GRADE"].apply(grade_norm)
 
     # Student-level key: SURNAME|FIRSTTOKEN|GRADELEN
     master["__GROUP_KEY"] = master["__SURNAME"] + "|" + master["__FIRSTTOK"] + "|" + master["__GRADELEN"]
-    master["UNIQUE_KEY"]  = master["__GROUP_KEY"]
+    master["UNIQUE_KEY"] = master["__GROUP_KEY"]
 
     src_counts = master.groupby("__GROUP_KEY")["SOURCE"].nunique().to_dict()
     master["__SRC_PRESENT"] = master["__GROUP_KEY"].map(src_counts).fillna(0).astype(int)
 
     # Sort by key then source
-    order = {"BB":0, "RED":1, "SR":2}
+    order = {"BB": 0, "RED": 1, "SR": 2}
     master["_source_rank"] = master["SOURCE"].map(lambda x: order.get(str(x).upper(), 99))
     master_sorted = master.sort_values(
-        by=["UNIQUE_KEY","_source_rank","STUDENT LAST NAME","STUDENT FIRST NAME"],
+        by=["UNIQUE_KEY", "_source_rank", "STUDENT LAST NAME", "STUDENT FIRST NAME"],
         kind="mergesort"
     ).reset_index(drop=True)
 
@@ -488,10 +494,10 @@ if run:
     summary_rows = []
     for gkey, grp in master.groupby("__GROUP_KEY"):
         parts = gkey.split("|")
-        surname_token, first_token, grade = (parts + ["",""])[:3]
-        in_bb  = any(grp["SOURCE"].str.upper()=="BB")
-        in_red = any(grp["SOURCE"].str.upper()=="RED")
-        in_sr  = any(grp["SOURCE"].str.upper()=="SR")
+        surname_token, first_token, grade = (parts + ["", ""])[:3]
+        in_bb = any(grp["SOURCE"].str.upper() == "BB")
+        in_red = any(grp["SOURCE"].str.upper() == "RED")
+        in_sr = any(grp["SOURCE"].str.upper() == "SR")
         summary_rows.append({
             "SURNAME_TOKEN(LAST)": surname_token,
             "FIRST_TOKEN": first_token,
@@ -499,34 +505,15 @@ if run:
             "BB": "✅" if in_bb else "❌",
             "RED": "✅" if in_red else "❌",
             "SR": "✅" if in_sr else "❌",
-            "SOURCES_PRESENT": int(in_bb)+int(in_red)+int(in_sr),
+            "SOURCES_PRESENT": int(in_bb) + int(in_red) + int(in_sr),
         })
     summary = pd.DataFrame(summary_rows).sort_values(
-        ["SURNAME_TOKEN(LAST)","GRADE","FIRST_TOKEN"]
+        ["SURNAME_TOKEN(LAST)", "GRADE", "FIRST_TOKEN"]
     ).reset_index(drop=True)
-
-    # Presence-by-key debug
-    with st.expander("Presence by key (debug)"):
-        debug = (master
-                 .groupby("__GROUP_KEY")
-                 .agg(SOURCES_PRESENT=("SOURCE", lambda s: s.str.upper().nunique()),
-                      SOURCES=("SOURCE", lambda s: ",".join(sorted(set(s.str.upper())))),
-                      EXAMPLE_NAMES=("STUDENT FIRST NAME", lambda s: "; ".join(s.head(3).astype(str)))))
-        st.dataframe(debug.sort_values("SOURCES_PRESENT", ascending=False).head(200))
-
-        all3 = master[master["__GROUP_KEY"].isin(debug.index[debug["SOURCES_PRESENT"]==3])]
-        st.write(f"Rows present in all 3 sources: {len(all3)}")
-        st.dataframe(all3[["SOURCE","STUDENT LAST NAME","STUDENT FIRST NAME","GRADE","UNIQUE_KEY"]].head(50))
-
-        st.download_button(
-            "Download presence_debug.csv",
-            data=debug.to_csv().encode("utf-8"),
-            file_name="presence_debug.csv",
-            mime="text/csv"
-        )
 
     # WRITE EXCEL
     import xlsxwriter
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         # Sheet 1: Master
@@ -538,9 +525,9 @@ if run:
         fmt_red = wb.add_format({"font_color": "#A10000"})
         fmt_sr = wb.add_format({"font_color": "#006400"})
         warn_fill = "#FFF59D"
-        fmt_bb_warn  = wb.add_format({"font_color": "#000000", "bg_color": warn_fill, "bold": True})
+        fmt_bb_warn = wb.add_format({"font_color": "#000000", "bg_color": warn_fill, "bold": True})
         fmt_red_warn = wb.add_format({"font_color": "#A10000", "bg_color": warn_fill, "bold": True})
-        fmt_sr_warn  = wb.add_format({"font_color": "#006400", "bg_color": warn_fill, "bold": True})
+        fmt_sr_warn = wb.add_format({"font_color": "#006400", "bg_color": warn_fill, "bold": True})
 
         # header
         for c_idx, col in enumerate(master_sorted.columns):
@@ -551,21 +538,24 @@ if run:
             width = min(max([len(str(col))] + [len(v) for v in vals]) + 2, 40)
             ws1.set_column(i, i, width)
 
-        idx = {c:i for i,c in enumerate(master_sorted.columns)}
-        s_col = idx["SOURCE"]; present_col = idx["__SRC_PRESENT"]
+        idx = {c: i for i, c in enumerate(master_sorted.columns)}
+        s_col = idx["SOURCE"]
+        present_col = idx["__SRC_PRESENT"]
         n_rows, n_cols = master_sorted.shape
         for r in range(n_rows):
             src = str(master_sorted.iat[r, s_col]).strip().upper()
             present_all = int(master_sorted.iat[r, present_col]) >= 3
             base_fmt, warn_fmt = (fmt_bb, fmt_bb_warn)
-            if src == "RED": base_fmt, warn_fmt = (fmt_red, fmt_red_warn)
-            elif src == "SR": base_fmt, warn_fmt = (fmt_sr, fmt_sr_warn)
-            fmt = base_fmt if present_all else warn_fmt  # only highlight if NOT in all 3
+            if src == "RED":
+                base_fmt, warn_fmt = (fmt_red, fmt_red_warn)
+            elif src == "SR":
+                base_fmt, warn_fmt = (fmt_sr, fmt_sr_warn)
+            fmt = base_fmt if present_all else warn_fmt  # highlight only if NOT in all 3
             for c in range(n_cols):
                 ws1.write(r + 1, c, master_sorted.iat[r, c], fmt)
 
         # hide helpers
-        for helper in ["__SURNAME","__FIRSTTOK","__GRADELEN","__GROUP_KEY","__SRC_PRESENT","_source_rank"]:
+        for helper in ["__SURNAME", "__FIRSTTOK", "__GRADELEN", "__GROUP_KEY", "__SRC_PRESENT", "_source_rank"]:
             if helper in idx:
                 ws1.set_column(idx[helper], idx[helper], None, None, {"hidden": True})
 
@@ -573,7 +563,7 @@ if run:
         summary.to_excel(writer, index=False, sheet_name="Summary")
         ws2 = writer.sheets["Summary"]
         header_fmt2 = wb.add_format({"bold": True})
-        ok_fmt  = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+        ok_fmt = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
         bad_fmt = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
         for c_idx, col in enumerate(summary.columns):
             ws2.write(0, c_idx, col, header_fmt2)
@@ -581,16 +571,21 @@ if run:
             vals = summary[col].astype(str).head(2000).tolist()
             width = min(max([len(str(col))] + [len(v) for v in vals]) + 2, 50)
             ws2.set_column(i, i, width)
-        col_idx = {c:i for i,c in enumerate(summary.columns)}
+        col_idx = {c: i for i, c in enumerate(summary.columns)}
         for r in range(len(summary)):
-            for src_col in ["BB","RED","SR"]:
+            for src_col in ["BB", "RED", "SR"]:
                 val = summary.iat[r, col_idx[src_col]]
                 ws2.write(r + 1, col_idx[src_col], val, ok_fmt if val == "✅" else bad_fmt)
 
+    # Build timestamped filename in Eastern Time
+    eastern = pytz.timezone("America/New_York")
+    ts = datetime.now(eastern).strftime("%y%m%d_%H%M")
+    file_name = f"{ts}_Dataset_Master.xlsx"
+
     st.success("✅ Excel generated successfully")
     st.download_button(
-        label="⬇️ Download Master_Students_Combined_LENIENT_WITH_SUMMARY.xlsx",
+        label=f"⬇️ Download {file_name}",
         data=output.getvalue(),
-        file_name="Master_Students_Combined_LENIENT_WITH_SUMMARY.xlsx",
+        file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
