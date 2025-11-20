@@ -1,5 +1,5 @@
 # app.py – Dataset Reconciliation (Master_Students builder)
-# Version 5.2.1
+# Version 5.2.1 – improved Blackbaud name parsing for multi-part surnames + label tweak
 
 import io
 import re
@@ -9,7 +9,7 @@ import pandas as pd
 import pytz
 import streamlit as st
 
-VERSION = "5.2.0"
+VERSION = "5.2.1"
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -197,21 +197,26 @@ def parse_blackbaud(file) -> pd.DataFrame:
         return [p.strip().rstrip(",;/|") for p in text.split("|") if p.strip()]
 
     def parse_student_entry(entry: str):
+        # Extract grade in parentheses at the end, if present
         m = re.search(r"\(([^)]+)\)\s*$", entry)
         grade = m.group(1).strip() if m else ""
         name = re.sub(r"\([^)]+\)\s*$", "", entry).strip()
+
+        # With explicit delimiters Last; First or Last, First
         if ";" in name:
             last, first = [t.strip() for t in name.split(";", 1)]
         elif "," in name:
             last, first = [t.strip() for t in name.split(",", 1)]
         else:
+            # NEW: Assume pattern "Last Last First" or "Last First":
+            # last name = all tokens except last, first name = last token.
             toks = name.split()
-            if len(toks) >= 3:
-                last, first = toks[0], " ".join(toks[1:])
-            elif len(toks) == 2:
-                last, first = toks[0], toks[1]
+            if len(toks) >= 2:
+                last = " ".join(toks[:-1])
+                first = toks[-1]
             else:
                 last, first = name, ""
+
         return last, first, grade
 
     rows = []
