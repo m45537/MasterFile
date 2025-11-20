@@ -1,41 +1,98 @@
-.DS_Store
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
-.venv
-venv/
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
 env/
 venv/
-.venv
+.venv/
+.env
+ENV/
+env.bak/
+venv.bak/
 
 # Streamlit
 .streamlit/secrets.toml
+.streamlit/cache/
 
-# Data files
+# Data files (keep these out of version control)
 *.xlsx
 *.xls
 *.csv
+*.json
 uploads/
 outputs/
+data/
+temp/
+*.bak
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
 
 # Logs
 *.log
+logs/
+*.pid
 
-# OS
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# IDE
+# IDE and editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.project
+.pydevproject
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Documentation builds
+docs/_build/
+site/
+
+# Package files
+*.egg
+*.whl
+
+# Backup files
+*.backup
+*.bak
+app_backup.py
+*_backup.*
+
+# Local configuration
+config.local.ini
+settings.local.json
+
+# Debug files
+*.stackdump
+core.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
