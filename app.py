@@ -1,5 +1,5 @@
 # app.py – Dataset Reconciliation (Master_Students builder)
-# Version 5.2.0 – nuanced coloring + mismatches summary sheet
+# Version 5.2.1
 
 import io
 import re
