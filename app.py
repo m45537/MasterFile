@@ -462,7 +462,7 @@ st.subheader("1. Upload source rosters")
 
 c1, c2, c3 = st.columns(3)
 with c1:
-    f_bb = st.file_uploader("Blackbaud Roster (must contain 'Student name and grades')", type=["xlsx", "xls"], key="bb")
+    f_bb = st.file_uploader("Blackbaud Roster", type=["xlsx", "xls"], key="bb")
 with c2:
     f_red = st.file_uploader("Rediker", type=["xlsx", "xls"], key="red")
 with c3:
