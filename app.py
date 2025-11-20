@@ -1,5 +1,5 @@
 # app.py – Dataset Comparison
-# Version 1.0.0 – 2025-11-19 21:30 ET
+# Version 1.0.1 – 2025-11-19 18:00 ET
 
 import io
 import re
@@ -144,7 +144,7 @@ def find_student_grade_blob_column(df):
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_blackbaud(file) -> pd.DataFrame:
     # Detect header row in first 25 lines
-    probe = pd.read_excel(file, header=None, nrows=25)
+    probe = pd.read_excel(file, header=None, nrows=25, engine="openpyxl")
     want = ["FAMILY", "ID", "PARENT", "FIRST", "LAST", "STUDENT", "GRADE"]
     best_row, best_hits = 0, -1
     for i in range(len(probe)):
@@ -153,7 +153,7 @@ def parse_blackbaud(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
 
-    df = pd.read_excel(file, header=best_row).fillna("")
+    df = pd.read_excel(file, header=best_row, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
 
     # Flexible column finding
@@ -238,7 +238,7 @@ def parse_rediker(file) -> pd.DataFrame:
       - APID (or UNIQUE ID) = student ID
     """
     # Detect header row in first ~12 lines
-    probe = pd.read_excel(file, header=None, nrows=12)
+    probe = pd.read_excel(file, header=None, nrows=12, engine="openpyxl")
     tokens = {"APID", "STUDENT", "STUDENT NAME", "FIRST", "LAST", "GRADE", "UNIQUE"}
     best_row, best_hits = 0, -1
     for i in range(len(probe)):
@@ -247,7 +247,7 @@ def parse_rediker(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
 
-    df = pd.read_excel(file, header=best_row).fillna("")
+    df = pd.read_excel(file, header=best_row, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
     U = {c.upper(): c for c in df.columns}
 
@@ -340,7 +340,7 @@ def parse_rediker(file) -> pd.DataFrame:
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_student_records(file) -> pd.DataFrame:
     # Detect a plausible header row
-    probe = pd.read_excel(file, header=None, nrows=20)
+    probe = pd.read_excel(file, header=None, nrows=20, engine="openpyxl")
     clues = ["STUDENT", "FIRST", "LAST", "NAME", "GRADE", "FAMILY", "REDIKER", "ID"]
     best_row, best_hits = 0, -1
     for i in range(len(probe)):
@@ -349,7 +349,7 @@ def parse_student_records(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
 
-    df = pd.read_excel(file, header=best_row).fillna("")
+    df = pd.read_excel(file, header=best_row, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
     U = {c.upper(): c for c in df.columns}
 
