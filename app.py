@@ -1,5 +1,5 @@
 # app.py – Dataset Reconciliation (Master_Students builder)
-# Version 5.1.0 – adds RAW name columns in Summary + debug logging
+# Version 5.2.0 – nuanced coloring + mismatches summary sheet
 
 import io
 import re
@@ -9,7 +9,7 @@ import pandas as pd
 import pytz
 import streamlit as st
 
-VERSION = "5.1.0"
+VERSION = "5.2.0"
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -20,7 +20,7 @@ st.title("📘 Dataset Reconciliation")
 st.caption(f"Version {VERSION}")
 st.caption(
     "Upload Blackbaud Roster, Rediker, and Student Records → builds a Master_Students Excel "
-    "with a detailed Master sheet and a Summary sheet."
+    "with a detailed Master sheet and two Summary sheets (all + mismatches)."
 )
 
 # Sidebar – debug toggle
@@ -558,9 +558,14 @@ if run:
             ["SURNAME", "GRADE", "FIRST"]
         ).reset_index(drop=True)
 
+        # Mismatches-only summary (SOURCES_PRESENT < 3)
+        mismatches = summary[summary["SOURCES_PRESENT"] < 3].reset_index(drop=True)
+
         if debug_log:
             st.write("📄 Summary (first 20 rows):")
             st.dataframe(summary.head(20))
+            st.write("⚠️ Summary_Mismatches (first 20 rows):")
+            st.dataframe(mismatches.head(20))
 
         # We ONLY write the “visible” columns to Excel for Master
         master_out = master[
@@ -580,7 +585,7 @@ if run:
         ].copy()
 
         # ─────────────────────────────────────────────────────
-        # WRITE EXCEL (Master + Summary) with formatting
+        # WRITE EXCEL (Master + Summary + Summary_Mismatches)
         # ─────────────────────────────────────────────────────
         import xlsxwriter
 
@@ -595,10 +600,17 @@ if run:
             fmt_bb = wb.add_format({"font_color": "#000000"})
             fmt_red = wb.add_format({"font_color": "#A10000"})
             fmt_sr = wb.add_format({"font_color": "#006400"})
-            warn_fill = "#FFF59D"
+
+            warn_fill = "#FFF59D"     # yellow
+            severe_fill = "#FFC7CE"   # light red/pink
+
             fmt_bb_warn = wb.add_format({"font_color": "#000000", "bg_color": warn_fill, "bold": True})
             fmt_red_warn = wb.add_format({"font_color": "#A10000", "bg_color": warn_fill, "bold": True})
             fmt_sr_warn = wb.add_format({"font_color": "#006400", "bg_color": warn_fill, "bold": True})
+
+            fmt_bb_severe = wb.add_format({"font_color": "#000000", "bg_color": severe_fill, "bold": True})
+            fmt_red_severe = wb.add_format({"font_color": "#A10000", "bg_color": severe_fill, "bold": True})
+            fmt_sr_severe = wb.add_format({"font_color": "#006400", "bg_color": severe_fill, "bold": True})
 
             # Header row
             for c_idx, col in enumerate(master_out.columns):
@@ -617,22 +629,32 @@ if run:
 
             for r in range(n_rows):
                 src = str(master_out.iat[r, s_col]).strip().upper()
-                present_all = int(master_out.iat[r, present_col]) >= 3
-                base_fmt, warn_fmt = (fmt_bb, fmt_bb_warn)
-                if src == "RED":
-                    base_fmt, warn_fmt = (fmt_red, fmt_red_warn)
-                elif src == "SR":
-                    base_fmt, warn_fmt = (fmt_sr, fmt_sr_warn)
-                fmt = base_fmt if present_all else warn_fmt
-                for c in range(n_cols):
-                    ws1.write(r + 1, c, master_out.iat[r, c], fmt)
+                present_count = int(master_out.iat[r, present_col])
 
-            # Summary sheet – uses requested headers
+                # Choose base/warn/severe format based on source + presence count
+                if src == "RED":
+                    base_fmt, warn_fmt, severe_fmt = fmt_red, fmt_red_warn, fmt_red_severe
+                elif src == "SR":
+                    base_fmt, warn_fmt, severe_fmt = fmt_sr, fmt_sr_warn, fmt_sr_severe
+                else:
+                    base_fmt, warn_fmt, severe_fmt = fmt_bb, fmt_bb_warn, fmt_bb_severe
+
+                if present_count >= 3:
+                    row_fmt = base_fmt
+                elif present_count == 2:
+                    row_fmt = warn_fmt
+                else:  # 0 or 1 source
+                    row_fmt = severe_fmt
+
+                for c in range(n_cols):
+                    ws1.write(r + 1, c, master_out.iat[r, c], row_fmt)
+
+            # Summary sheet – full
             summary.to_excel(writer, index=False, sheet_name="Summary")
             ws2 = writer.sheets["Summary"]
             header_fmt2 = wb.add_format({"bold": True})
             ok_fmt = wb.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
-            bad_fmt = wb.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+            bad_fmt = wb.add_format({"bg_color": severe_fill, "font_color": "#9C0006"})
 
             for c_idx, col in enumerate(summary.columns):
                 ws2.write(0, c_idx, col, header_fmt2)
@@ -647,6 +669,24 @@ if run:
                 for src_col in ["BB", "RED", "SR"]:
                     val = summary.iat[r, col_idx[src_col]]
                     ws2.write(r + 1, col_idx[src_col], val, ok_fmt if val == "✅" else bad_fmt)
+
+            # Summary_Mismatches sheet – only SOURCES_PRESENT < 3
+            mismatches.to_excel(writer, index=False, sheet_name="Summary_Mismatches")
+            ws3 = writer.sheets["Summary_Mismatches"]
+
+            for c_idx, col in enumerate(mismatches.columns):
+                ws3.write(0, c_idx, col, header_fmt2)
+
+            for i, col in enumerate(mismatches.columns):
+                vals = mismatches[col].astype(str).head(2000).tolist()
+                width = min(max([len(str(col))] + [len(v) for v in vals]) + 2, 50)
+                ws3.set_column(i, i, width)
+
+            mis_col_idx = {c: i for i, c in enumerate(mismatches.columns)}
+            for r in range(len(mismatches)):
+                for src_col in ["BB", "RED", "SR"]:
+                    val = mismatches.iat[r, mis_col_idx[src_col]]
+                    ws3.write(r + 1, mis_col_idx[src_col], val, ok_fmt if val == "✅" else bad_fmt)
 
         # ─────────────────────────────────────────────────────
         # TIMESTAMPED FILENAME – MATCH GOOD PATTERN
