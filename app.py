@@ -1,5 +1,5 @@
 # app.py – Dataset Reconciliation (Master_Students builder)
-# Version 5.0.0 – merged best of v3.0.0 + Dataset Reconciliation UI
+# Version 5.1.0 – adds RAW name columns in Summary + debug logging
 
 import io
 import re
@@ -9,7 +9,7 @@ import pandas as pd
 import pytz
 import streamlit as st
 
-VERSION = "5.0.0"
+VERSION = "5.1.0"
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -23,10 +23,10 @@ st.caption(
     "with a detailed Master sheet and a Summary sheet."
 )
 
-# (Optional) sidebar for future debug toggles
+# Sidebar – debug toggle
 with st.sidebar:
     debug_log = st.checkbox("🪵 Show detailed debug logs", value=False)
-    st.caption("When enabled, this can show intermediate column detection and sample rows.")
+    st.caption("When enabled, shows header detection, column choices, and sample parsed rows.")
 
 # ─────────────────────────────────────────────────────────────
 # BASIC NORMALIZATION HELPERS
@@ -163,6 +163,11 @@ def parse_blackbaud(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
 
+    if debug_log:
+        st.write("🖤 Blackbaud – detected header row index:", best_row)
+        st.write("🖤 Blackbaud – probe preview (first 25 rows):")
+        st.dataframe(probe)
+
     df = pd.read_excel(file, header=best_row, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
 
@@ -170,6 +175,16 @@ def parse_blackbaud(file) -> pd.DataFrame:
     pf_col = find_any(df, ("PARENT", "FIRST"), ("PRIMARY", "PARENT", "FIRST"), ("GUARDIAN", "FIRST"))
     pl_col = find_any(df, ("PARENT", "LAST"), ("PRIMARY", "PARENT", "LAST"), ("GUARDIAN", "LAST"))
     stu_blob_col = find_student_grade_blob_column(df)
+
+    if debug_log:
+        st.write("🖤 Blackbaud – columns:", list(df.columns))
+        st.write("🖤 Blackbaud – detected columns:", {
+            "FAMILY ID": fam_col,
+            "PARENT FIRST": pf_col,
+            "PARENT LAST": pl_col,
+            "STUDENT+GRADE BLOB": stu_blob_col,
+        })
+        st.dataframe(df.head(10))
 
     if not stu_blob_col:
         st.error("Blackbaud: couldn’t find the student + (grade) column. Please check your export.")
@@ -227,6 +242,11 @@ def parse_blackbaud(file) -> pd.DataFrame:
             out["STUDENT FIRST NAME"], out["STUDENT LAST NAME"], out["GRADE"]
         )
     ]
+
+    if debug_log:
+        st.write("🖤 Blackbaud – parsed rows (first 10):")
+        st.dataframe(out.head(10))
+
     return out
 
 
@@ -244,9 +264,17 @@ def parse_rediker(file) -> pd.DataFrame:
         if hits > best_hits:
             best_row, best_hits = i, hits
 
+    if debug_log:
+        st.write("🔴 Rediker – detected header row index:", best_row)
+        st.write("🔴 Rediker – probe preview (first 12 rows):")
+        st.dataframe(probe)
+
     df = pd.read_excel(file, header=best_row, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
     U = {c.upper(): c for c in df.columns}
+
+    if debug_log:
+        st.write("🔴 Rediker – columns:", list(df.columns))
 
     student_col = U.get("STUDENT NAME") or U.get("STUDENT") or U.get("STUDENT_NAME")
     if not student_col:
@@ -274,6 +302,17 @@ def parse_rediker(file) -> pd.DataFrame:
 
     fam_col = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
     rid_col = U.get("APID") or U.get("UNIQUE ID") or U.get("UNIQUEID") or U.get("ID")
+
+    if debug_log:
+        st.write("🔴 Rediker – detected columns:", {
+            "STUDENT NAME": student_col,
+            "PARENT FIRST": parent_first_col,
+            "PARENT LAST": parent_last_col,
+            "GRADE": grade_col,
+            "FAMILY ID": fam_col,
+            "REDIKER ID": rid_col,
+        })
+        st.dataframe(df.head(10))
 
     def split_student_name(val: str):
         if pd.isna(val) or str(val).strip() == "":
@@ -321,6 +360,11 @@ def parse_rediker(file) -> pd.DataFrame:
             out["STUDENT FIRST NAME"], out["STUDENT LAST NAME"], out["GRADE"]
         )
     ]
+
+    if debug_log:
+        st.write("🔴 Rediker – parsed rows (first 10):")
+        st.dataframe(out.head(10))
+
     return out
 
 
@@ -331,6 +375,9 @@ def parse_student_records(file) -> pd.DataFrame:
     df = pd.read_excel(file, engine="openpyxl").fillna("")
     df.columns = [str(c).strip() for c in df.columns]
     U = {c.upper(): c for c in df.columns}
+
+    if debug_log:
+        st.write("💚 Student Records – columns:", list(df.columns))
 
     col_id = list(df.columns)[0] if len(df.columns) else None
     col_fam = U.get("FAMILY ID") or U.get("FAMILYID") or U.get("FAMILY_ID")
@@ -364,6 +411,19 @@ def parse_student_records(file) -> pd.DataFrame:
         df["__GradeBlank"] = ""
         col_grade = "__GradeBlank"
 
+    if debug_log:
+        st.write("💚 Student Records – detected columns:", {
+            "ID": col_id,
+            "FAMILY ID": col_fam,
+            "PARENT FIRST": col_pf,
+            "PARENT LAST": col_pl,
+            "STUDENT FIRST": col_sf,
+            "STUDENT LAST": col_sl,
+            "GRADE": col_grade,
+            "REDIKER ID": col_red,
+        })
+        st.dataframe(df.head(10))
+
     out = pd.DataFrame({
         "ID": df[col_id].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_id else "",
         "FAMILY ID": df[col_fam].astype(str).str.replace(r"\.0$", "", regex=True).str.strip() if col_fam else "",
@@ -387,6 +447,11 @@ def parse_student_records(file) -> pd.DataFrame:
             out["STUDENT FIRST NAME"], out["STUDENT LAST NAME"], out["GRADE"]
         )
     ]
+
+    if debug_log:
+        st.write("💚 Student Records – parsed rows (first 10):")
+        st.dataframe(out.head(10))
+
     return out
 
 
@@ -429,6 +494,10 @@ if run:
             ignore_index=True
         )
 
+        if debug_log:
+            st.write("📊 Combined master (first 20 rows before summary/build):")
+            st.dataframe(combined.head(20))
+
         # Presence count per UNIQUE_KEY
         src_counts = combined.groupby("UNIQUE_KEY")["SOURCE"].nunique().to_dict()
         combined["__SRC_PRESENT"] = combined["UNIQUE_KEY"].map(src_counts).fillna(0).astype(int)
@@ -442,30 +511,56 @@ if run:
             kind="mergesort"
         ).reset_index(drop=True)
 
-        # Summary per UNIQUE_KEY
+        if debug_log:
+            st.write("📘 Master after sort (first 20 rows):")
+            st.dataframe(master.head(20))
+
+        # Summary – with RAW name columns, using requested headers
         summary_rows = []
         for key, grp in master.groupby("UNIQUE_KEY"):
             parts = key.split("|")
-            surname_token = parts[0] if len(parts) >= 1 else ""
-            first_token = parts[1] if len(parts) >= 2 else ""
-            grade_token = parts[2] if len(parts) >= 3 else ""
+            surname = parts[0] if len(parts) >= 1 else ""
+            first = parts[1] if len(parts) >= 2 else ""
+            grade = parts[2] if len(parts) >= 3 else ""
+
             in_bb = any(grp["SOURCE"].str.upper() == "BB")
             in_red = any(grp["SOURCE"].str.upper() == "RED")
             in_sr = any(grp["SOURCE"].str.upper() == "SR")
+            present_count = int(in_bb) + int(in_red) + int(in_sr)
+
+            raw_bb = [
+                f"{r['STUDENT LAST NAME']} {r['STUDENT FIRST NAME']}"
+                for _, r in grp.iterrows() if str(r["SOURCE"]).upper() == "BB"
+            ]
+            raw_red = [
+                f"{r['STUDENT LAST NAME']} {r['STUDENT FIRST NAME']}"
+                for _, r in grp.iterrows() if str(r["SOURCE"]).upper() == "RED"
+            ]
+            raw_sr = [
+                f"{r['STUDENT LAST NAME']} {r['STUDENT FIRST NAME']}"
+                for _, r in grp.iterrows() if str(r["SOURCE"]).upper() == "SR"
+            ]
+
             summary_rows.append({
-                "UNIQUE_KEY": key,
-                "SURNAME_TOKEN(LAST)": surname_token,
-                "FIRST_TOKEN": first_token,
-                "GRADE_NORM": grade_norm(grade_token),
+                "SURNAME": surname,
+                "FIRST": first,
+                "GRADE": grade_norm(grade),
                 "BB": "✅" if in_bb else "❌",
                 "RED": "✅" if in_red else "❌",
                 "SR": "✅" if in_sr else "❌",
-                "SOURCES_PRESENT": int(in_bb) + int(in_red) + int(in_sr),
+                "SOURCES_PRESENT": present_count,
+                "RAW_NAMES_BB": "; ".join(raw_bb),
+                "RAW_NAMES_RED": "; ".join(raw_red),
+                "RAW_NAMES_SR": "; ".join(raw_sr),
             })
 
         summary = pd.DataFrame(summary_rows).sort_values(
-            ["SURNAME_TOKEN(LAST)", "GRADE_NORM", "FIRST_TOKEN"]
+            ["SURNAME", "GRADE", "FIRST"]
         ).reset_index(drop=True)
+
+        if debug_log:
+            st.write("📄 Summary (first 20 rows):")
+            st.dataframe(summary.head(20))
 
         # We ONLY write the “visible” columns to Excel for Master
         master_out = master[
@@ -532,7 +627,7 @@ if run:
                 for c in range(n_cols):
                     ws1.write(r + 1, c, master_out.iat[r, c], fmt)
 
-            # Summary sheet
+            # Summary sheet – uses requested headers
             summary.to_excel(writer, index=False, sheet_name="Summary")
             ws2 = writer.sheets["Summary"]
             header_fmt2 = wb.add_format({"bold": True})
